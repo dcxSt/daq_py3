@@ -1,0 +1,117 @@
+#!/usr/bin/python
+import argparse
+import ConfigParser
+import logging
+import os
+import datetime
+import albatrosdigitizer
+import albatros_daq_utils as utils
+import numpy
+#import trimble_utils
+import lbtools_l
+
+if __name__=="__main__":
+    parser=argparse.ArgumentParser(description="Script to initialise SNAP Board")
+    parser.add_argument("-c", "--configfile", type=str, default="config.ini", help=".ini file with parameters to configure firmware")
+    args=parser.parse_args()
+
+    #loading config file
+    config_file=ConfigParser.SafeConfigParser()
+    config_file.read(args.configfile)
+
+    # setting up logger
+    logger=logging.getLogger("albatros_config_fpga")
+    logger.setLevel(logging.INFO)
+
+    log_dir=config_file.get("albatros2", "log_directory")+"/config_fpga"
+    if not os.path.isdir(log_dir):
+        os.makedirs(log_dir)
+    file_logger=logging.FileHandler(log_dir+"/albatros_init_"+datetime.datetime.now().strftime("%d%m%Y_%H%M%S")+".log")
+    file_format=logging.Formatter("%(asctime)s %(name)-12s %(message)s", "%d-%m-%Y %H:%M:%S")
+    file_logger.setFormatter(file_format)
+    file_logger.setLevel(logging.INFO)
+    logger.addHandler(file_logger)
+
+    hostname=os.uname()[1]
+    logger.info("hostname is "+repr(hostname))
+
+    if lbtools_l.set_clock_lb(): # setting system clock with leo bodnar
+        logger.info("LB GPS clock successfully detected.")
+        logger.info("Successfully updated system clock to gps time from LB.")
+    else:
+        logger.info("Unable to read time from LB. Using RPi system clock which is unreliable")
+
+#    if trimble_utils.set_clock_trimble():
+#        logger.info("Trimble GPS clock successfully detected.")
+#        logger.info("Successfully updated system clock to gps time from trimble.")
+#    else:
+#        logger.info("Unable to read time from trimble. Using RPi system clock which is unreliable")
+
+    #saving all relevant config file parameters in log
+    logger.info("########################################################################################")
+    snap_ip=config_file.get("albatros2", "snap_ip")
+    logger.info("# (1) SNAP Board IP address: %s"%(snap_ip))
+    snap_port=int(config_file.get("albatros2", "snap_port"))
+    logger.info("# (2) SNAP Board port: %d"%(snap_port))
+    fpg_file=config_file.get("albatros2", "fpg_file")
+    logger.info("# (3) fpg file: %s"%(fpg_file))
+    fftshift=int(config_file.get("albatros2", "fftshift"), 16)
+    logger.info("# (4) fftshift: %d"%(fftshift))
+    acclen=int(config_file.get("albatros2", "accumulation_length"))
+    logger.info("# (5) Accumulation length: %d"%(acclen))
+    bits=int(config_file.get("albatros2", "bits"))
+    logger.info("# (6) Baseband bits: %d"%(bits))
+    adc_max_retries=int(config_file.get("albatros2","adc_max_retries"))
+    max_bytes_per_packet=int(config_file.get("albatros2", "max_bytes_per_packet"))
+    logger.info("# (7) Max bytes per packet: %d"%(max_bytes_per_packet))
+    ref_clock=config_file.get("albatros2", "synthesizer_clock_ref")
+    if ref_clock=="none":
+        logger.info("# (8) Clock source: External/250 Mhz")
+        ref_clock=None
+    else:
+        logger.info("# (8) Clock source: Internal/%s Mhz"%(ref_clock))
+        ref_clock=int(ref_clock)
+    channels=config_file.get("albatros2", "channels")
+    logger.info("# (9) Channels: %s"%(channels))
+    channels_coeffs=config_file.get("albatros2", "channel_coeffs")
+    logger.info("# (10) Channel coeffs: %s"%(channels_coeffs))
+    logger.info("# (11) Log directory: %s"%(log_dir))
+    snap_cooldowntime=config_file.getfloat("albatros2", "snap_cooldowntime")
+    logger.info("# (12) SNAP cooldown time: {}".format(snap_cooldowntime))
+    logger.info("########################################################################################")
+
+    # Automatically obtain eth0 network interface details
+    dest_ip, dest_port, dest_mac = utils.read_ifconfig(interface="eth0")
+    print("dest_ip, dest_port, dest_mac" )
+    print(dest_ip)
+    print(dest_port)
+    print(dest_mac)
+    if dest_port is not None:
+        dest_port = int(dest_port)
+    logger.info("eth0 network interface details:")
+    logger.info("Destination IP address: %s"%(dest_ip))
+    logger.info("Destination port: %s"%(dest_port))
+    logger.info("Destination MAC address: %s"%(dest_mac))
+
+    try:
+        chans=utils.get_channels_from_str(channels, bits)
+        print('chans are ',chans.shape,chans) # debug
+        spec_per_packet=utils.get_nspec(chans, max_nbyte=max_bytes_per_packet)
+        bytes_per_spectrum=chans.shape[0]
+        coeffs=utils.get_coeffs_from_str(channels_coeffs)
+        #print('coeffs are ',coeffs.shape,coeffs.max(),coeffs.min(),coeffs)
+        #print('ports are ',snap_ip,snap_port)
+        albatros_snap=albatrosdigitizer.AlbatrosDigitizer(snap_ip, snap_port, logger=logger)
+        print("albatros_snap.initialise(fpg_file, ref_clock, fftshift, acclen, bits,spec_per_packet, bytes_per_spectrum, dest_ip, dest_port, dest_mac, adc_tries=adc_max_retries, cooldowntime=snap_cooldowntime)")
+        print(fpg_file, ref_clock, fftshift, acclen, bits, spec_per_packet, bytes_per_spectrum, dest_ip,dest_port, dest_mac, adc_max_retries, snap_cooldowntime)
+        #assert 0==1
+        albatros_snap.initialise(fpg_file, ref_clock, fftshift, acclen, bits,
+                                 spec_per_packet, bytes_per_spectrum, dest_ip,
+                                 dest_port, dest_mac, adc_tries=adc_max_retries, cooldowntime=snap_cooldowntime)
+        adc_stats=albatros_snap.get_adc_stats()
+        logger.info("ADC bits used: (adc0, %.2f) (adc3, %.2f)"%(adc_stats["adc0"]["bits_used"], adc_stats["adc3"]["bits_used"]))
+        albatros_snap.set_channel_order(chans, bits)
+        albatros_snap.set_channel_coeffs(coeffs, bits)
+    finally:
+        logger.info("Finished initialising at %s"%datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S"))
+
