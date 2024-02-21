@@ -3,7 +3,7 @@ async-timeout==4.0.3
 #casperfpga==0.4.4.dev1348+py38.efd0d7c.dirty # install dev branch py38
 certifi==2023.11.17
 charset-normalizer==3.3.2
-circus==0.18.0
+circus==0.16.1
 comm==0.2.1
 crcmod==1.7
 Cython==3.0.8
