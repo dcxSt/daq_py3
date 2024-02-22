@@ -29,13 +29,13 @@ def get_channels_from_str(chan, nbits):
         start_stop=map(int, single_chan.split(":"))
         chan_start_stop.extend(start_stop)
     if nbits==1:
-        for i in range(len(chan_start_stop)//2):
+        for i in range(len(chan_start_stop)/2):
             new_chans=np.append(new_chans, np.arange(chan_start_stop[2*i], chan_start_stop[2*i+1], 2, dtype=">H"))
     elif nbits==2:
-        for i in range(len(chan_start_stop)//2):
+        for i in range(len(chan_start_stop)/2):
             new_chans=np.append(new_chans, np.arange(chan_start_stop[2*i], chan_start_stop[2*i+1], dtype=">H"))
     else:
-        for i in range(len(chan_start_stop)//2):
+        for i in range(len(chan_start_stop)/2):
             chans=np.arange(chan_start_stop[2*i], chan_start_stop[2*i+1], dtype=">H")
             new_chans=np.append(new_chans, np.ravel(np.column_stack((chans, chans))))
     return new_chans
@@ -44,7 +44,7 @@ def get_coeffs_from_str(coeffs):
     multi_coeff=coeffs.split(" ")
     new_coeffs=np.zeros(2048)
     for single_coeff in multi_coeff:
-        start_stop_coeff=list(map(int, single_coeff.split(":")))
+        start_stop_coeff=map(int, single_coeff.split(":"))
         if start_stop_coeff[2]>=0:
             val=start_stop_coeff[2]
         else:
@@ -55,7 +55,7 @@ def get_coeffs_from_str(coeffs):
     return new_coeffs
 
 def get_channels_from_freq(nu=[0,30],nbit=0,nu_max=125,nchan=2048,dtype='>i2',verbose=False):
-    nseg=len(nu)//2 # int or float?
+    nseg=len(nu)/2
     for j in range(nseg):
         nu0=nu[2*j]
         nu1=nu[2*j+1]
